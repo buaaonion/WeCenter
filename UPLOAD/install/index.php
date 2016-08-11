@@ -249,29 +249,6 @@ switch ($_POST['step'])
 			H::redirect_msg(load_class('core_lang')->_t('安装中止: WeCenter 要求使用 MySQL 5.0 以上版本的数据库支持, 您的服务器当前 MySQL 版本为: %s', $db->getServerVersion()), './');
 		}
 
-		if (!$_POST['db_prefix'] AND count($tables) > 0)
-		{
-			H::redirect_msg(load_class('core_lang')->_t('数据库已经存在数据表, 不允许安装, 如要重新安装请先清空数据表'), './');
-		}
-
-		foreach ($tables AS $key => $table_info)
-		{
-			if (!is_array($table_info))
-			{
-				break;
-			}
-
-			foreach ($table_info AS $_key => $table)
-			{
-				if (substr($table, 0, strlen($_POST['db_prefix'])) == $_POST['db_prefix'])
-				{
-					H::redirect_msg(load_class('core_lang')->_t('数据库已经存在相同前缀的数据表, 不允许安装, 如要重新安装请先清空数据表'), './');
-
-					break;
-				}
-			}
-		}
-
 		if (!defined('IN_SAE'))
 		{
 			$config = array(
@@ -290,26 +267,6 @@ switch ($_POST['step'])
 			load_class('core_config')->set('database', $config);
 		}
 
-		// 创建数据表
-		$db_table_querys = explode(";\r", str_replace(array('[#DB_PREFIX#]', '[#DB_ENGINE#]', "\n"), array($_POST['db_prefix'], $_POST['db_engine'], "\r"), file_get_contents(ROOT_PATH . 'install/db/mysql.sql')));
-
-		foreach ($db_table_querys as $_sql)
-		{
-			if ($query_string = trim(str_replace(array(
-				"\r",
-				"\n",
-				"\t"
-			), '', $_sql)))
-			{
-				$db->query($query_string);
-			}
-		}
-
-		$db->insert($_POST['db_prefix'] . 'system_setting', array(
-			'varname' => 'db_engine',
-			'value' => 's:' . strlen($_POST['db_engine']) . ':"' . $_POST['db_engine'] . '";',
-		));
-
 		TPL::output('install/final');
 		break;
 
@@ -318,93 +275,90 @@ switch ($_POST['step'])
 		$db_prefix = load_class('core_config')->get('database')->prefix;
 
 		$salt = fetch_salt(4);
+        if(count($db->query('select * from aws_users')) == 0) {
 
-		$data = array(
-			'user_name' => $_POST['user_name'],
-			'password' => compile_password($_POST['password'], $salt),
-			'email' => $_POST['email'],
-			'salt' => $salt,
-			'group_id' => 1,
-			'reputation_group' => 5,
-			'valid_email' => 1,
-			'is_first_login' => 1,
-			'reg_time' => time(),
-			'reg_ip' => ip2long(fetch_ip()),
-			'last_login' => time(),
-			'last_ip' => ip2long(fetch_ip()),
-			'last_active' => time(),
-			'invitation_available' => 10,
-			'integral' => 2000
-		);
+            $data = array(
+                'user_name' => $_POST['user_name'],
+                'password' => compile_password($_POST['password'], $salt),
+                'email' => $_POST['email'],
+                'salt' => $salt,
+                'group_id' => 1,
+                'reputation_group' => 5,
+                'valid_email' => 1,
+                'is_first_login' => 1,
+                'reg_time' => time(),
+                'reg_ip' => ip2long(fetch_ip()),
+                'last_login' => time(),
+                'last_ip' => ip2long(fetch_ip()),
+                'last_active' => time(),
+                'invitation_available' => 10,
+                'integral' => 2000
+            );
 
-		$db->insert($db_prefix . 'users', $data);
-		$db->insert($db_prefix . 'users_attrib', array('uid' => 1, 'signature' => ''));
+            $db->insert($db_prefix . 'users', $data);
+            $db->insert($db_prefix . 'users_attrib', array('uid' => 1, 'signature' => ''));
 
-		$db->insert($db_prefix . 'integral_log', array(
-			 'uid' => 1,
-			 'action' => 'REGISTER',
-			 'integral' => 2000,
-			 'note' => load_class('core_lang')->_t('初始资本'),
-			 'balance' => 2000,
-			 'time' => time()
-		));
+            $db->insert($db_prefix . 'integral_log', array(
+                'uid' => 1,
+                'action' => 'REGISTER',
+                'integral' => 2000,
+                'note' => load_class('core_lang')->_t('初始资本'),
+                'balance' => 2000,
+                'time' => time()
+            ));
+        }
 
 		//加载网站配置
 		$base_dir = dirname(dirname($_SERVER['PHP_SELF']));
 		$base_dir = ($base_dir == DIRECTORY_SEPARATOR) ? '' : $base_dir;
 
-		$insert_query = file_get_contents(ROOT_PATH . 'install/db/system_setting.sql');
+        if(count($db->query('select * from aws_system_setting')) == 0) {
+            $insert_query = file_get_contents(ROOT_PATH . 'install/db/system_setting.sql');
 
-		$insert_query = str_replace('[#DB_PREFIX#]', $db_prefix, $insert_query);
-		if (defined('IN_SAE'))
-		{
-			$insert_query = str_replace('[#UPLOAD_URL#]', serialize($_POST['upload_url']), $insert_query);
-			$insert_query = str_replace('[#UPLOAD_DIR#]', serialize('saestor://uploads'), $insert_query);
-		}
-		else
-		{
-			$base_url = base_url();
+            $insert_query = str_replace('[#DB_PREFIX#]', $db_prefix, $insert_query);
+            if (defined('IN_SAE')) {
+                $insert_query = str_replace('[#UPLOAD_URL#]', serialize($_POST['upload_url']), $insert_query);
+                $insert_query = str_replace('[#UPLOAD_DIR#]', serialize('saestor://uploads'), $insert_query);
+            } else {
+                $base_url = base_url();
 
-			if (substr($base_url, -8) == '/install')
-			{
-				$base_url = substr_replace($base_url, '', -8);
-			}
+                if (substr($base_url, -8) == '/install') {
+                    $base_url = substr_replace($base_url, '', -8);
+                }
 
-			$insert_query = str_replace('[#UPLOAD_URL#]', serialize($base_url . "/uploads"), $insert_query);
-			$insert_query = str_replace('[#UPLOAD_DIR#]', serialize(str_replace("\\", "/", ROOT_PATH) . "uploads"), $insert_query);
-		}
+                $insert_query = str_replace('[#UPLOAD_URL#]', serialize($base_url . "/uploads"), $insert_query);
+                $insert_query = str_replace('[#UPLOAD_DIR#]', serialize(str_replace("\\", "/", ROOT_PATH) . "uploads"), $insert_query);
+            }
 
-		$insert_query = str_replace('[#FROM_EMAIL#]', serialize($_POST['email']), $insert_query);
-		$insert_query = str_replace('[#DB_VERSION#]', serialize(G_VERSION_BUILD), $insert_query);
+            $insert_query = str_replace('[#FROM_EMAIL#]', serialize($_POST['email']), $insert_query);
+            $insert_query = str_replace('[#DB_VERSION#]', serialize(G_VERSION_BUILD), $insert_query);
 
-		//$db->query($insert_query);
+            //$db->query($insert_query);
 
-		$sql_query = str_replace("\n", "\r", $insert_query);
+            $sql_query = str_replace("\n", "\r", $insert_query);
 
-		$db_table_querys = explode(";\r", $sql_query);
+            $db_table_querys = explode(";\r", $sql_query);
 
-		foreach ($db_table_querys as $_sql)
-		{
-			if ($query_string = trim(str_replace(array(
-				"\r",
-				"\n",
-				"\t"
-			), '', $_sql)))
-			{
-				try {
-					$db->query($query_string);
-				}
-				catch (Exception $e)
-				{
-					die('SQL Error: ' . $e->getMessage() . '<br /><br />Query: ' . $query_string);
-				}
-			}
-		}
+            foreach ($db_table_querys as $_sql) {
+                if ($query_string = trim(str_replace(array(
+                    "\r",
+                    "\n",
+                    "\t"
+                ), '', $_sql))
+                ) {
+                    try {
+                        $db->query($query_string);
+                    } catch (Exception $e) {
+                        die('SQL Error: ' . $e->getMessage() . '<br /><br />Query: ' . $query_string);
+                    }
+                }
+            }
 
-		$db->insert($db_prefix . 'system_setting', array(
-			'varname' => 'register_agreement',
-			'value' => serialize(file_get_contents(ROOT_PATH . 'install/db/register_agreement.txt')),
-		));
+            $db->insert($db_prefix . 'system_setting', array(
+                'varname' => 'register_agreement',
+                'value' => serialize(file_get_contents(ROOT_PATH . 'install/db/register_agreement.txt')),
+            ));
+        }
 
 		if (!defined('IN_SAE'))
 		{
